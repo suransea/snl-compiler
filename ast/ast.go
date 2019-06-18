@@ -230,6 +230,14 @@ type (
 		X Expr // expression
 	}
 
+	// An EmptyStmt node represents an empty statement.
+	// The "position" of the empty statement is the position
+	// of the immediately following (explicit or implicit) semicolon.
+	//
+	EmptyStmt struct {
+		Semi token.Pos // position of following ";"
+	}
+
 	// An AssignStmt node represents an assignment or
 	// a short variable declaration.
 	//
@@ -273,6 +281,7 @@ type (
 func (s *BadStmt) Pos() token.Pos    { return s.From }
 func (s *DeclStmt) Pos() token.Pos   { return s.Decl.Pos() }
 func (s *ExprStmt) Pos() token.Pos   { return s.X.Pos() }
+func (s *EmptyStmt) Pos() token.Pos  { return s.Semi }
 func (s *AssignStmt) Pos() token.Pos { return s.Lhs[0].Pos() }
 func (s *ReturnStmt) Pos() token.Pos { return s.Return }
 func (s *BlockStmt) Pos() token.Pos  { return s.BeginPos }
@@ -282,6 +291,7 @@ func (s *WhileStmt) Pos() token.Pos  { return s.While }
 func (s *BadStmt) End() token.Pos    { return s.To }
 func (s *DeclStmt) End() token.Pos   { return s.Decl.End() }
 func (s *ExprStmt) End() token.Pos   { return s.X.End() }
+func (s *EmptyStmt) End() token.Pos  { return s.Semi + 1 }
 func (s *AssignStmt) End() token.Pos { return s.Rhs[len(s.Rhs)-1].End() }
 func (s *ReturnStmt) End() token.Pos { return token.Pos(int(s.Return) + len("return")) }
 func (s *BlockStmt) End() token.Pos  { return s.EndPos }
@@ -294,6 +304,7 @@ func (s *WhileStmt) End() token.Pos  { return token.Pos(int(s.Endwh) + len("endw
 func (*BadStmt) stmtNode()    {}
 func (*DeclStmt) stmtNode()   {}
 func (*ExprStmt) stmtNode()   {}
+func (*EmptyStmt) stmtNode()  {}
 func (*AssignStmt) stmtNode() {}
 func (*ReturnStmt) stmtNode() {}
 func (*BlockStmt) stmtNode()  {}
