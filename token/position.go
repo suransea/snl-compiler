@@ -199,8 +199,6 @@ type lineInfo struct {
 }
 
 // AddLineInfo is like AddLineColumnInfo with a column = 1 argument.
-// It is here for backward-compatibility for code prior to Go 1.11.
-//
 func (f *File) AddLineInfo(offset int, filename string, line int) {
 	f.AddLineColumnInfo(offset, filename, line, 1)
 }

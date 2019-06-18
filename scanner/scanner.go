@@ -194,7 +194,7 @@ func (s *Scanner) scanMantissa(base int) {
 func (s *Scanner) scanNumber() (token.Token, string) {
 	// digitVal(s.ch) < 10
 	offs := s.offset
-	tok := token.INT
+	tok := token.INTC
 
 	// decimal int
 	s.scanMantissa(10)
@@ -318,16 +318,13 @@ func (s *Scanner) switch2(tok0, tok1 token.Token) token.Token {
 // and its literal string if applicable. The source end is indicated by
 // token.EOF.
 //
-// If the returned token is a literal (token.IDENT, token.INT,
-// token.CHARACTER) or token.COMMENT, the literal string
-// has the corresponding value.
+// If the returned token is a literal (token.IDENT, token.INTC, token.CHARC)
+// or token.COMMENT, the literal string has the corresponding value.
 //
 // If the returned token is a keyword, the literal string is the keyword.
 //
-// If the returned token is token.SEMICOLON, the corresponding
-// literal string is ";" if the semicolon was present in the source,
-// and "\n" if the semicolon was inserted because of a newline or
-// at EOF.
+// If the returned token is token.SEMI, the corresponding
+// literal string is ";"
 //
 // If the returned token is token.ILLEGAL, the literal string is the
 // offending character.
@@ -370,20 +367,20 @@ scanAgain:
 		case -1:
 			tok = token.EOF
 		case '\'':
-			tok = token.CHARACTER
+			tok = token.CHARC
 			lit = s.scanRune()
 		case ':':
 			tok = s.switch2(token.ILLEGAL, token.ASSIGN)
 		case '.':
-			tok = token.PERIOD
+			tok = token.DOT
 			if s.ch == '.' {
 				s.next()
-				tok = token.ELLIPSIS
+				tok = token.UNDERANGE
 			}
 		case ',':
 			tok = token.COMMA
 		case ';':
-			tok = token.SEMICOLON
+			tok = token.SEMI
 			lit = ";"
 		case '(':
 			tok = token.LPAREN

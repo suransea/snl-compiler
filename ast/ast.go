@@ -1,5 +1,4 @@
-// Package ast declares the types used to represent syntax trees for Go
-// packages.
+// Package ast declares the types used to represent syntax trees for SNL
 //
 package ast
 
@@ -271,7 +270,6 @@ type (
 )
 
 // Pos and End implementations for statement nodes.
-
 func (s *BadStmt) Pos() token.Pos    { return s.From }
 func (s *DeclStmt) Pos() token.Pos   { return s.Decl.Pos() }
 func (s *ExprStmt) Pos() token.Pos   { return s.X.Pos() }
@@ -339,7 +337,6 @@ type (
 )
 
 // Pos and End implementations for declaration nodes.
-
 func (d *BadDecl) Pos() token.Pos  { return d.From }
 func (d *VarDecl) Pos() token.Pos  { return d.VarPos }
 func (d *TypeDecl) Pos() token.Pos { return d.TypePos }
@@ -353,8 +350,10 @@ func (d *ProcDecl) End() token.Pos { return d.Body.End() }
 // declNode() ensures that only declaration nodes can be
 // assigned to a Decl.
 //
-func (*BadDecl) declNode() {}
-func (*VarDecl) declNode() {}
+func (*BadDecl) declNode()  {}
+func (*VarDecl) declNode()  {}
+func (*TypeDecl) declNode() {}
+func (*ProcDecl) declNode() {}
 
 // ----------------------------------------------------------------------------
 // File

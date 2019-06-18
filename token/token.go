@@ -1,6 +1,8 @@
 package token
 
-import "strconv"
+import (
+	"strconv"
+)
 
 // Token is the set of lexical tokens of the SNL programming language.
 type Token int
@@ -16,9 +18,9 @@ const (
 	literal_beg
 	// Identifiers and basic type literals
 	// (these tokens stand for classes of literals)
-	IDENT     // main
-	INT       // 12345
-	CHARACTER // 'a'
+	IDENT // main
+	INTC  // 12345
+	CHARC // 'a'
 	literal_end
 
 	operator_beg
@@ -33,18 +35,18 @@ const (
 	GTR    // >
 	ASSIGN // :=
 
-	ELLIPSIS // ..
+	UNDERANGE // ..
 
 	LPAREN // (
 	LBRACK // [
 	LBRACE // {
 	COMMA  // ,
-	PERIOD // .
+	DOT    // .
 
-	RPAREN    // )
-	RBRACK    // ]
-	RBRACE    // }
-	SEMICOLON // ;
+	RPAREN // )
+	RBRACK // ]
+	RBRACE // }
+	SEMI   // ;
 	operator_end
 
 	keyword_beg
@@ -79,9 +81,9 @@ var tokens = [...]string{
 	EOF:     "EOF",
 	COMMENT: "COMMENT",
 
-	IDENT:     "IDENT",
-	INT:       "INT",
-	CHARACTER: "CHARACTER",
+	IDENT: "IDENT",
+	INTC:  "INTC",
+	CHARC: "CHARC",
 
 	ADD: "+",
 	SUB: "-",
@@ -97,14 +99,14 @@ var tokens = [...]string{
 	LBRACK: "[",
 	LBRACE: "{",
 	COMMA:  ",",
-	PERIOD: ".",
+	DOT:    ".",
 
-	ELLIPSIS: "..",
+	UNDERANGE: "..",
 
-	RPAREN:    ")",
-	RBRACK:    "]",
-	RBRACE:    "}",
-	SEMICOLON: ";",
+	RPAREN: ")",
+	RBRACK: "]",
+	RBRACE: "}",
+	SEMI:   ";",
 
 	PROGRAM:   "program",
 	PROCEDURE: "procedure",
