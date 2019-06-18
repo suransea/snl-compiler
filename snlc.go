@@ -29,28 +29,33 @@ func main() {
 		os.Exit(1)
 	}
 
-	for i, arg := range flag.Args() {
-		bytes, err := ioutil.ReadFile(arg)
-		if err != nil {
-			logs.Error("file", i, "name", arg, err)
-			os.Exit(1)
+	// print tokens
+	if tokens {
+		for i, arg := range flag.Args() {
+			bytes, err := ioutil.ReadFile(arg)
+			if err != nil {
+				logs.Error("file", i, "name", arg, err)
+				os.Exit(1)
+			}
+			scan(arg, bytes)
 		}
-		switch {
-		case tokens:
-			scan(arg, bytes) // print tokens
-		case tree:
-			parse(arg, bytes) // generate ast
+	}
+
+	// generate ast
+	if tree {
+		for _, arg := range flag.Args() {
+			parse(arg)
 		}
 	}
 }
 
 // scan bytes with filename and print the tokens
 func scan(filename string, bytes []byte) {
-	var s scanner.Scanner
-	var errs scanner.ErrorList
 	fset := token.NewFileSet()
 	file := fset.AddFile(filename, fset.Base(), len(bytes))
+	var errs scanner.ErrorList
 	eh := func(pos token.Position, msg string) { errs.Add(pos, msg) }
+	var s scanner.Scanner
 	s.Init(file, bytes, eh, scanner.ScanComments)
 	for {
 		pos, tok, lit := s.Scan()
@@ -66,10 +71,9 @@ func scan(filename string, bytes []byte) {
 }
 
 // parse bytes with filename and print the ast
-func parse(filename string, bytes []byte) {
+func parse(filename string) {
 	fset := token.NewFileSet()
-	fset.AddFile(filename, fset.Base(), len(bytes))
-	tree, err := parser.ParseFile(fset, filename, bytes, 0)
+	tree, err := parser.ParseFile(fset, filename, nil, 0)
 	if err != nil {
 		logs.Error(err)
 	}

@@ -83,17 +83,10 @@ type (
 
 	// A CallExpr node represents an expression followed by an argument list.
 	CallExpr struct {
-		Fun    Expr      // function expression
+		Proc   *Ident    // procedure name
 		Lparen token.Pos // position of "("
-		Args   []Expr    // function arguments; or nil
+		Args   []Expr    // procedure arguments; or nil
 		Rparen token.Pos // position of ")"
-	}
-
-	// A UnaryExpr node represents a unary expression.
-	UnaryExpr struct {
-		OpPos token.Pos   // position of Op
-		Op    token.Token // operator
-		X     Expr        // operand
 	}
 
 	// A BinaryExpr node represents a binary expression.
@@ -112,8 +105,7 @@ func (x *BasicLit) Pos() token.Pos   { return x.ValuePos }
 func (x *ParenExpr) Pos() token.Pos  { return x.Lparen }
 func (x *ArrayExpr) Pos() token.Pos  { return x.Array }
 func (x *IndexExpr) Pos() token.Pos  { return x.X.Pos() }
-func (x *CallExpr) Pos() token.Pos   { return x.Fun.Pos() }
-func (x *UnaryExpr) Pos() token.Pos  { return x.OpPos }
+func (x *CallExpr) Pos() token.Pos   { return x.Proc.Pos() }
 func (x *BinaryExpr) Pos() token.Pos { return x.X.Pos() }
 
 func (x *BadExpr) End() token.Pos    { return x.To }
@@ -123,7 +115,6 @@ func (x *ParenExpr) End() token.Pos  { return x.Rparen + 1 }
 func (x *ArrayExpr) End() token.Pos  { return x.Type.End() }
 func (x *IndexExpr) End() token.Pos  { return x.Rbrack + 1 }
 func (x *CallExpr) End() token.Pos   { return x.Rparen + 1 }
-func (x *UnaryExpr) End() token.Pos  { return x.X.End() }
 func (x *BinaryExpr) End() token.Pos { return x.Y.End() }
 
 // exprNode() ensures that only expression/type nodes can be
@@ -136,7 +127,6 @@ func (*ParenExpr) exprNode()  {}
 func (*ArrayExpr) exprNode()  {}
 func (*IndexExpr) exprNode()  {}
 func (*CallExpr) exprNode()   {}
-func (*UnaryExpr) exprNode()  {}
 func (*BinaryExpr) exprNode() {}
 
 // A Field represents a Field declaration list in a procedure or var,
@@ -252,28 +242,21 @@ type (
 		Return token.Pos // position of "return" keyword
 	}
 
-	// A BlockStmt node represents a statement list.
-	BlockStmt struct {
-		BeginPos token.Pos
-		List     []Stmt
-		EndPos   token.Pos
-	}
-
 	// An IfStmt node represents an if statement.
 	IfStmt struct {
-		If   token.Pos  // position of "if" keyword
-		Cond Expr       // condition
-		Then *BlockStmt // body block
-		Else *BlockStmt // else branch; or nil
-		Fi   token.Pos  // position of "fi" keyword
+		If   token.Pos // position of "if" keyword
+		Cond Expr      // condition
+		Then []Stmt    // body block
+		Else []Stmt    // else branch; or nil
+		Fi   token.Pos // position of "fi" keyword
 	}
 
 	// A WhileStmt represents a while statement.
 	WhileStmt struct {
-		While token.Pos  // position of "while" keyword
-		Cond  Expr       // condition; or nil
-		Body  *BlockStmt // body block
-		Endwh token.Pos  // position of "endwh" keyword
+		While token.Pos // position of "while" keyword
+		Cond  Expr      // condition; or nil
+		Body  Stmt      // body block
+		Endwh token.Pos // position of "endwh" keyword
 	}
 )
 
@@ -284,7 +267,6 @@ func (s *ExprStmt) Pos() token.Pos   { return s.X.Pos() }
 func (s *EmptyStmt) Pos() token.Pos  { return s.Semi }
 func (s *AssignStmt) Pos() token.Pos { return s.Lhs[0].Pos() }
 func (s *ReturnStmt) Pos() token.Pos { return s.Return }
-func (s *BlockStmt) Pos() token.Pos  { return s.BeginPos }
 func (s *IfStmt) Pos() token.Pos     { return s.If }
 func (s *WhileStmt) Pos() token.Pos  { return s.While }
 
@@ -293,10 +275,9 @@ func (s *DeclStmt) End() token.Pos   { return s.Decl.End() }
 func (s *ExprStmt) End() token.Pos   { return s.X.End() }
 func (s *EmptyStmt) End() token.Pos  { return s.Semi + 1 }
 func (s *AssignStmt) End() token.Pos { return s.Rhs[len(s.Rhs)-1].End() }
-func (s *ReturnStmt) End() token.Pos { return token.Pos(int(s.Return) + len("return")) }
-func (s *BlockStmt) End() token.Pos  { return s.EndPos }
-func (s *IfStmt) End() token.Pos     { return token.Pos(int(s.Fi) + len("fi")) }
-func (s *WhileStmt) End() token.Pos  { return token.Pos(int(s.Endwh) + len("endwh")) }
+func (s *ReturnStmt) End() token.Pos { return s.Return + 6 }
+func (s *IfStmt) End() token.Pos     { return s.Fi + 2 }
+func (s *WhileStmt) End() token.Pos  { return s.Endwh + 5 }
 
 // stmtNode() ensures that only statement nodes can be
 // assigned to a Stmt.
@@ -307,7 +288,6 @@ func (*ExprStmt) stmtNode()   {}
 func (*EmptyStmt) stmtNode()  {}
 func (*AssignStmt) stmtNode() {}
 func (*ReturnStmt) stmtNode() {}
-func (*BlockStmt) stmtNode()  {}
 func (*IfStmt) stmtNode()     {}
 func (*WhileStmt) stmtNode()  {}
 
@@ -327,14 +307,14 @@ type (
 
 	// A VarDecl node represents vars declaration
 	VarDecl struct {
-		VarPos token.Pos  // position of "var"
-		Vars   *FieldList // vars
+		Var  token.Pos  // position of "var"
+		Vars *FieldList // vars
 	}
 
 	// A TypeDecl node represents types declaration
 	TypeDecl struct {
-		TypePos token.Pos  // position of "type"
-		Types   *FieldList // types
+		Type  token.Pos  // position of "type"
+		Types *FieldList // types
 	}
 
 	// A ProcDecl node represents a procedure declaration.
@@ -343,20 +323,21 @@ type (
 		Name   *Ident     // procedure name
 		Params *FieldList // procedure params
 		Var    *VarDecl   // procedure var declaration
-		Body   *BlockStmt // procedure body
+		Body   []Stmt     // procedure body
+		EndPos token.Pos  // position of "end"
 	}
 )
 
 // Pos and End implementations for declaration nodes.
 func (d *BadDecl) Pos() token.Pos  { return d.From }
-func (d *VarDecl) Pos() token.Pos  { return d.VarPos }
-func (d *TypeDecl) Pos() token.Pos { return d.TypePos }
+func (d *VarDecl) Pos() token.Pos  { return d.Var }
+func (d *TypeDecl) Pos() token.Pos { return d.Type }
 func (d *ProcDecl) Pos() token.Pos { return d.Proc }
 
 func (d *BadDecl) End() token.Pos  { return d.To }
 func (d *VarDecl) End() token.Pos  { return d.Vars.End() }
 func (d *TypeDecl) End() token.Pos { return d.Types.End() }
-func (d *ProcDecl) End() token.Pos { return d.Body.End() }
+func (d *ProcDecl) End() token.Pos { return d.EndPos + 3 }
 
 // declNode() ensures that only declaration nodes can be
 // assigned to a Decl.
@@ -371,11 +352,12 @@ func (*ProcDecl) declNode() {}
 
 // A file is the root node of an ast
 type File struct {
-	ProPos token.Pos  // position of "program" keyword
-	Name   *Ident     // program name
-	Decls  []Decl     // top-level declarations; or nil
-	Block  *BlockStmt // main block
+	ProPos token.Pos // position of "program" keyword
+	Name   *Ident    // program name
+	Decls  []Decl    // top-level declarations; or nil
+	Block  []Stmt    // main block
+	Dot    token.Pos // position of '.'
 }
 
 func (f *File) Pos() token.Pos { return f.ProPos }
-func (f *File) End() token.Pos { return f.Block.End() }
+func (f *File) End() token.Pos { return f.Dot + 1 }
