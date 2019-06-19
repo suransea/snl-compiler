@@ -391,11 +391,11 @@ func (p *parser) parseArrayExpr() *ast.ArrayExpr {
 
 	array := p.expect(token.ARRAY)
 	p.expect(token.LBRACK)
-	p.expect(token.INTC)
 	min, _ := strconv.Atoi(p.lit)
-	p.expect(token.UNDERANGE)
 	p.expect(token.INTC)
+	p.expect(token.UNDERANGE)
 	max, _ := strconv.Atoi(p.lit)
+	p.expect(token.INTC)
 	p.expect(token.RBRACK)
 	p.expect(token.OF)
 	typ := p.parseType()
