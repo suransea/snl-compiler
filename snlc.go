@@ -78,7 +78,7 @@ func parse(filename string) {
 		if errs, ok := err.(scanner.ErrorList); ok {
 			logs.Info("[syntax]", "error count:", errs.Len())
 		}
-		//scanner.PrintError(os.Stderr, err)
+		scanner.PrintError(os.Stderr, err)
 	}
 	err = ast.Print(fset, tree)
 	if err != nil {

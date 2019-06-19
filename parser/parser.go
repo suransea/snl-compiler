@@ -284,9 +284,7 @@ func (p *parser) parseStmtList(end ...token.Token) (list []ast.Stmt) {
 		defer un(trace(p, "StatementList"))
 	}
 
-	is := isAny(p.tok, end...)
-
-	for !is && p.tok != token.EOF {
+	for !isAny(p.tok, end...) && p.tok != token.EOF {
 		list = append(list, p.parseStmt())
 	}
 
@@ -568,25 +566,25 @@ func (p *parser) parseStmt() (s ast.Stmt) {
 	case token.PROCEDURE:
 		s = &ast.DeclStmt{Decl: p.parseProcDecl()}
 	case token.IDENT:
-		id := p.parseIdent()
+		x := p.parseExpr()
 		switch p.tok {
 		case token.ASSIGN:
-			s = p.parseAssignStmt(id)
+			s = p.parseAssignStmt(x)
 		default:
-			s = p.parseStmt()
+			s = &ast.ExprStmt{X: x}
 		}
+	case token.READ, token.WRITE:
+		proc := &ast.Ident{NamePos: p.pos, Name: p.lit}
+		p.next()
+		s = &ast.ExprStmt{X: p.parseCallExpr(proc)}
 	case
 		token.INTC, token.CHARC, token.LPAREN,
 		token.LBRACK, token.ADD, token.SUB:
 		s = &ast.ExprStmt{X: p.parseExpr()}
-		p.expectSemi()
 	case token.RETURN:
 		s = p.parseReturnStmt()
 	case token.IF:
 		s = p.parseIfStmt()
-		if p.tok == token.SEMI {
-			p.expectSemi()
-		}
 	case token.WHILE:
 		s = p.parseWhileStmt()
 	case token.SEMI:
@@ -598,6 +596,10 @@ func (p *parser) parseStmt() (s ast.Stmt) {
 		p.errorExpected(pos, "statement")
 		p.advance(stmtStart)
 		s = &ast.BadStmt{From: pos, To: p.pos}
+	}
+
+	if p.tok == token.SEMI {
+		p.expectSemi()
 	}
 
 	return
@@ -697,7 +699,10 @@ func (p *parser) parseProcDecl() *ast.ProcDecl {
 	name := p.parseIdent()
 	params := p.parseParamList()
 	p.expectSemi()
-	vars := p.parseVarDecl()
+	var vars *ast.VarDecl
+	if p.tok == token.VAR {
+		vars = p.parseVarDecl()
+	}
 	p.expect(token.BEGIN)
 	body := p.parseStmtList(token.END)
 	end := p.expect(token.END)
