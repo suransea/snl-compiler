@@ -491,38 +491,12 @@ func (p *parser) parseBinaryExpr(prec1 int) ast.Expr {
 	}
 }
 
-//func (p *parser) parseBinaryExpr() ast.Expr {
-//	if p.trace {
-//		defer un(trace(p, "BinaryExpr"))
-//	}
-//
-//	x := p.parseExpr()
-//	var (
-//		op    token.Token
-//		opPos token.Pos
-//	)
-//	switch p.tok {
-//	case token.ADD, token.SUB, token.MUL, token.QUO, token.EQL, token.GTR, token.LSS:
-//		op = p.tok
-//		opPos = p.pos
-//	default:
-//		pos := p.pos
-//		p.errorExpected(p.pos, "binary operator")
-//		p.advance(exprEnd)
-//		return &ast.BadExpr{From: pos, To: p.pos}
-//	}
-//	y := p.parseExpr()
-//
-//	return &ast.BinaryExpr{X: x, Op: op, OpPos: opPos, Y: y}
-//}
-
-// If lhs is set and the result is an identifier, it is not resolved.
 func (p *parser) parseExpr() ast.Expr {
 	if p.trace {
 		defer un(trace(p, "Expression"))
 	}
 
-	return p.parseBinaryExpr(token.LowestPrec + 1) //TODO
+	return p.parseBinaryExpr(token.LowestPrec + 1)
 }
 
 // ----------------------------------------------------------------------------
