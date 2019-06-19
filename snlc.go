@@ -75,7 +75,10 @@ func parse(filename string) {
 	fset := token.NewFileSet()
 	tree, err := parser.ParseFile(fset, filename, nil, 0)
 	if err != nil {
-		logs.Error(err)
+		if errs, ok := err.(scanner.ErrorList); ok {
+			logs.Info("[syntax]", "error count:", errs.Len())
+		}
+		scanner.PrintError(os.Stderr, err)
 	}
 	err = ast.Print(fset, tree)
 	if err != nil {

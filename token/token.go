@@ -155,9 +155,7 @@ func (tok Token) String() string {
 // indexing, and other operator and delimiter tokens.
 //
 const (
-	LowestPrec  = 0 // non-operators
-	UnaryPrec   = 6
-	HighestPrec = 7
+	LowestPrec = 0 // non-operators
 )
 
 // Precedence returns the operator precedence of the binary
