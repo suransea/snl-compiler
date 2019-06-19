@@ -149,14 +149,14 @@ func (f *Field) End() token.Pos {
 
 // A FieldList represents a list of Fields, enclosed by parentheses or braces.
 type FieldList struct {
-	Opening token.Pos // position of opening parenthesis, if any
-	List    []*Field  // field list; or nil
-	Closing token.Pos // position of closing parenthesis, if any
+	Lparen token.Pos // position of opening parenthesis, if any
+	List   []*Field  // field list; or nil
+	Rparen token.Pos // position of closing parenthesis, if any
 }
 
 func (f *FieldList) Pos() token.Pos {
-	if f.Opening.IsValid() {
-		return f.Opening
+	if f.Lparen.IsValid() {
+		return f.Lparen
 	}
 	// the list should not be empty in this case;
 	// be conservative and guard against bad ASTs
@@ -167,8 +167,8 @@ func (f *FieldList) Pos() token.Pos {
 }
 
 func (f *FieldList) End() token.Pos {
-	if f.Closing.IsValid() {
-		return f.Closing + 1
+	if f.Rparen.IsValid() {
+		return f.Rparen + 1
 	}
 	// the list should not be empty in this case;
 	// be conservative and guard against bad ASTs
@@ -232,9 +232,9 @@ type (
 	// a short variable declaration.
 	//
 	AssignStmt struct {
-		Lhs    []Expr
+		Lhs    Expr
 		Assign token.Pos // position of ":="
-		Rhs    []Expr
+		Rhs    Expr
 	}
 
 	// A ReturnStmt node represents a return statement.
@@ -255,7 +255,7 @@ type (
 	WhileStmt struct {
 		While token.Pos // position of "while" keyword
 		Cond  Expr      // condition; or nil
-		Body  Stmt      // body block
+		Body  []Stmt    // body block
 		Endwh token.Pos // position of "endwh" keyword
 	}
 )
@@ -265,7 +265,7 @@ func (s *BadStmt) Pos() token.Pos    { return s.From }
 func (s *DeclStmt) Pos() token.Pos   { return s.Decl.Pos() }
 func (s *ExprStmt) Pos() token.Pos   { return s.X.Pos() }
 func (s *EmptyStmt) Pos() token.Pos  { return s.Semi }
-func (s *AssignStmt) Pos() token.Pos { return s.Lhs[0].Pos() }
+func (s *AssignStmt) Pos() token.Pos { return s.Lhs.Pos() }
 func (s *ReturnStmt) Pos() token.Pos { return s.Return }
 func (s *IfStmt) Pos() token.Pos     { return s.If }
 func (s *WhileStmt) Pos() token.Pos  { return s.While }
@@ -274,7 +274,7 @@ func (s *BadStmt) End() token.Pos    { return s.To }
 func (s *DeclStmt) End() token.Pos   { return s.Decl.End() }
 func (s *ExprStmt) End() token.Pos   { return s.X.End() }
 func (s *EmptyStmt) End() token.Pos  { return s.Semi + 1 }
-func (s *AssignStmt) End() token.Pos { return s.Rhs[len(s.Rhs)-1].End() }
+func (s *AssignStmt) End() token.Pos { return s.Rhs.End() }
 func (s *ReturnStmt) End() token.Pos { return s.Return + 6 }
 func (s *IfStmt) End() token.Pos     { return s.Fi + 2 }
 func (s *WhileStmt) End() token.Pos  { return s.Endwh + 5 }
@@ -352,12 +352,12 @@ func (*ProcDecl) declNode() {}
 
 // A file is the root node of an ast
 type File struct {
-	ProPos token.Pos // position of "program" keyword
-	Name   *Ident    // program name
-	Decls  []Decl    // top-level declarations; or nil
-	Block  []Stmt    // main block
-	Dot    token.Pos // position of '.'
+	Prog  token.Pos // position of "program" keyword
+	Name  *Ident    // program name
+	Decls []Decl    // top-level declarations; or nil
+	Body  []Stmt    // main block
+	Dot   token.Pos // position of '.'
 }
 
-func (f *File) Pos() token.Pos { return f.ProPos }
+func (f *File) Pos() token.Pos { return f.Prog }
 func (f *File) End() token.Pos { return f.Dot + 1 }

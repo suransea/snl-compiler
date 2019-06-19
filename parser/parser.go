@@ -188,6 +188,16 @@ func (p *parser) advance(to map[token.Token]bool) {
 	}
 }
 
+func (p *parser) eqAny(tok ...token.Token) (eq bool, which token.Token) {
+	for _, t := range tok {
+		if p.tok == t {
+			eq, which = true, t
+			break
+		}
+	}
+	return
+}
+
 var stmtStart = map[token.Token]bool{
 	token.WHILE:  true,
 	token.DO:     true,
@@ -196,19 +206,6 @@ var stmtStart = map[token.Token]bool{
 	token.ELSE:   true,
 	token.BEGIN:  true,
 	token.RETURN: true,
-}
-
-var stmtEnd = map[token.Token]bool{
-	token.END:   true,
-	token.FI:    true,
-	token.IF:    true,
-	token.ENDWH: true,
-}
-
-var declStart = map[token.Token]bool{
-	token.TYPE:      true,
-	token.VAR:       true,
-	token.PROCEDURE: true,
 }
 
 var exprEnd = map[token.Token]bool{
@@ -292,16 +289,9 @@ func (p *parser) parseStmtList(end ...token.Token) (list []ast.Stmt, use token.T
 		defer un(trace(p, "StatementList"))
 	}
 
-	find := false
-	for _, t := range end {
-		if p.tok == t {
-			find = true
-			use = t
-			break
-		}
-	}
+	eq, use := p.eqAny(end...)
 
-	for !find && p.tok != token.EOF {
+	for !eq && p.tok != token.EOF {
 		list = append(list, p.parseStmt())
 	}
 
@@ -310,6 +300,11 @@ func (p *parser) parseStmtList(end ...token.Token) (list []ast.Stmt, use token.T
 
 // ----------------------------------------------------------------------------
 // Expressions
+
+func (p *parser) isType() (is bool) {
+	is, _ = p.eqAny(token.IDENT, token.INTEGER, token.CHAR, token.ARRAY)
+	return
+}
 
 func (p *parser) parseType() ast.Expr {
 	if p.trace {
@@ -323,6 +318,8 @@ func (p *parser) parseType() ast.Expr {
 		return x
 	case token.ARRAY:
 		return p.parseArrayExpr()
+	case token.IDENT:
+		return p.parseIdent()
 	default:
 		pos := p.pos
 		p.errorExpected(p.pos, "type")
@@ -442,6 +439,20 @@ func (p *parser) parseExpr() ast.Expr {
 // ----------------------------------------------------------------------------
 // Statements
 
+func (p *parser) parseAssignStmt(lhs ast.Expr) *ast.AssignStmt {
+	if p.trace {
+		defer un(trace(p, "AssignStmt"))
+	}
+
+	if p.tok == token.LBRACK {
+		lhs = p.parseIndexExpr(lhs)
+	}
+	assign := p.expect(token.ASSIGN)
+	rhs := p.parseExpr()
+
+	return &ast.AssignStmt{Lhs: lhs, Assign: assign, Rhs: rhs}
+}
+
 func (p *parser) parseReturnStmt() *ast.ReturnStmt {
 	if p.trace {
 		defer un(trace(p, "ReturnStmt"))
@@ -452,27 +463,12 @@ func (p *parser) parseReturnStmt() *ast.ReturnStmt {
 	return &ast.ReturnStmt{Return: pos}
 }
 
-func (p *parser) makeExpr(s ast.Stmt, want string) ast.Expr {
-	if s == nil {
-		return nil
-	}
-	if es, isExpr := s.(*ast.ExprStmt); isExpr {
-		return p.checkExpr(es.X)
-	}
-	found := "simple statement"
-	if _, isAss := s.(*ast.AssignStmt); isAss {
-		found = "assignment"
-	}
-	p.error(s.Pos(), fmt.Sprintf("expected %s, found %s (missing parentheses around composite literal?)", want, found))
-	return &ast.BadExpr{From: s.Pos(), To: p.safePos(s.End())}
-}
-
 func (p *parser) parseIfStmt() *ast.IfStmt {
 	if p.trace {
 		defer un(trace(p, "IfStmt"))
 	}
 
-	ifPos := p.expect(token.IF)
+	pos := p.expect(token.IF)
 	cond := p.parseExpr()
 	p.expect(token.THEN)
 	then, use := p.parseStmtList(token.ELSE, token.FI)
@@ -483,7 +479,7 @@ func (p *parser) parseIfStmt() *ast.IfStmt {
 	}
 	fi := p.expect(token.FI)
 
-	return &ast.IfStmt{If: ifPos, Cond: cond, Then: then, Else: els, Fi: fi}
+	return &ast.IfStmt{If: pos, Cond: cond, Then: then, Else: els, Fi: fi}
 }
 
 func (p *parser) parseWhileStmt() ast.Stmt {
@@ -492,7 +488,12 @@ func (p *parser) parseWhileStmt() ast.Stmt {
 	}
 
 	pos := p.expect(token.WHILE)
+	cond := p.parseExpr()
+	p.expect(token.DO)
+	body, _ := p.parseStmtList(token.ENDWH)
+	endwh := p.expect(token.ENDWH)
 
+	return &ast.WhileStmt{While: pos, Cond: cond, Body: body, Endwh: endwh}
 }
 
 func (p *parser) parseStmt() (s ast.Stmt) {
@@ -501,17 +502,30 @@ func (p *parser) parseStmt() (s ast.Stmt) {
 	}
 
 	switch p.tok {
-	case token.TYPE, token.VAR:
-		s = &ast.DeclStmt{Decl: p.parseDecl(stmtStart)}
+	case token.PROCEDURE:
+		s = &ast.DeclStmt{Decl: p.parseProcDecl()}
+	case token.IDENT:
+		id := p.parseIdent()
+		switch p.tok {
+		case token.ASSIGN:
+			s = p.parseAssignStmt(id)
+		default:
+			s = p.parseStmt()
+		}
 	case
-		// tokens that may start an expression
-		token.IDENT, token.INTC, token.CHARC, token.LPAREN,
-		token.LBRACK, token.ADD, token.SUB, token.MUL:
-		s, _ = p.parseSimpleStmt(labelOk)
+		token.INTC, token.CHARC, token.LPAREN,
+		token.LBRACK, token.ADD, token.SUB:
+		s = &ast.ExprStmt{X: p.parseExpr()}
+		p.expectSemi()
 	case token.RETURN:
 		s = p.parseReturnStmt()
 	case token.IF:
 		s = p.parseIfStmt()
+		if p.tok == token.SEMI {
+			p.expectSemi()
+		}
+	case token.WHILE:
+		s = p.parseWhileStmt()
 	case token.SEMI:
 		s = &ast.EmptyStmt{Semi: p.pos}
 		p.next()
@@ -529,18 +543,131 @@ func (p *parser) parseStmt() (s ast.Stmt) {
 // ----------------------------------------------------------------------------
 // Declarations
 
-func (p *parser) parseProcDecl() *ast.ProcDecl {
-	if p.trace {
-		defer un(trace(p, "FunctionDecl"))
-	}
-
+func (p *parser) isDecl() (is bool) {
+	is, _ = p.eqAny(token.TYPE, token.VAR, token.PROCEDURE)
+	return
 }
 
-func (p *parser) parseDecl(sync map[token.Token]bool) ast.Decl {
+func (p *parser) parseVarList() *ast.FieldList {
+	if p.trace {
+		defer un(trace(p, "VarList"))
+	}
+
+	var list []*ast.Field
+
+	for p.isType() {
+		typ := p.parseType()
+		ids := p.parseIdentList()
+		list = append(list, &ast.Field{Names: ids, Type: typ})
+		p.expectSemi()
+	}
+
+	return &ast.FieldList{List: list}
+}
+
+func (p *parser) parseTypeList() *ast.FieldList {
+	if p.trace {
+		defer un(trace(p, "TypeList"))
+	}
+
+	var list []*ast.Field
+
+	for p.tok == token.IDENT {
+		id := p.parseIdent()
+		p.expect(token.EQL)
+		typ := p.parseType()
+		list = append(list, &ast.Field{Names: []*ast.Ident{id}, Type: typ})
+		p.expectSemi()
+	}
+
+	return &ast.FieldList{List: list}
+}
+
+func (p *parser) parseParamList() *ast.FieldList {
+	if p.trace {
+		defer un(trace(p, "ParamList"))
+	}
+
+	var list []*ast.Field
+
+	lp := p.expect(token.LPAREN)
+	first := p.pos
+	for p.tok != token.RPAREN {
+		if p.pos != first {
+			p.expectSemi()
+			p.expect(token.VAR)
+		}
+		typ := p.parseType()
+		ids := p.parseIdentList()
+		list = append(list, &ast.Field{Names: ids, Type: typ})
+	}
+	rp := p.expect(token.RPAREN)
+
+	return &ast.FieldList{Lparen: lp, List: list, Rparen: rp}
+}
+
+func (p *parser) parseVarDecl() *ast.VarDecl {
+	if p.trace {
+		defer un(trace(p, "VarDecl"))
+	}
+
+	pos := p.expect(token.VAR)
+	vars := p.parseVarList()
+	return &ast.VarDecl{Var: pos, Vars: vars}
+}
+
+func (p *parser) parseTypeDecl() *ast.TypeDecl {
+	if p.trace {
+		defer un(trace(p, "TypeDecl"))
+	}
+
+	pos := p.expect(token.TYPE)
+	types := p.parseTypeList()
+	return &ast.TypeDecl{Type: pos, Types: types}
+}
+
+func (p *parser) parseProcDecl() *ast.ProcDecl {
+	if p.trace {
+		defer un(trace(p, "ProcDecl"))
+	}
+
+	proc := p.expect(token.PROCEDURE)
+	name := p.parseIdent()
+	params := p.parseParamList()
+	p.expectSemi()
+	vars := p.parseVarDecl()
+	p.expect(token.BEGIN)
+	body, _ := p.parseStmtList(token.END)
+	end := p.expect(token.END)
+
+	return &ast.ProcDecl{
+		Proc:   proc,
+		Name:   name,
+		Params: params,
+		Var:    vars,
+		Body:   body,
+		EndPos: end,
+	}
+}
+
+func (p *parser) parseDecl() ast.Decl {
 	if p.trace {
 		defer un(trace(p, "Declaration"))
 	}
 
+	switch p.tok {
+	case token.VAR:
+		return p.parseVarDecl()
+	case token.TYPE:
+		return p.parseTypeDecl()
+	case token.PROCEDURE:
+		return p.parseProcDecl()
+	default:
+		pos := p.pos
+		p.errorExpected(p.pos, "declaration")
+		p.advance(stmtStart)
+		return &ast.BadDecl{From: pos, To: p.pos}
+	}
 }
 
 // ----------------------------------------------------------------------------
@@ -571,14 +698,21 @@ func (p *parser) parseFile() *ast.File {
 	}
 
 	var decls []ast.Decl
-	var block []ast.Stmt
-	var dot token.Pos
+
+	for p.isDecl() {
+		decls = append(decls, p.parseDecl())
+	}
+
+	p.expect(token.BEGIN)
+	body, _ := p.parseStmtList(token.END)
+	p.expect(token.END)
+	dot := p.expect(token.DOT)
 
 	return &ast.File{
-		ProPos: pos,
-		Name:   ident,
-		Decls:  decls,
-		Block:  block,
-		Dot:    dot,
+		Prog:  pos,
+		Name:  ident,
+		Decls: decls,
+		Body:  body,
+		Dot:   dot,
 	}
 }
