@@ -31,12 +31,7 @@ type parser struct {
 	syncPos token.Pos // last synchronization position
 	syncCnt int       // number of parser.advance calls without progress
 
-	// Non-syntactic parser control
-	exprLev int // < 0: in control clause, >= 0: in expression
-
-	unresolved []*ast.Ident // unresolved identifiers
-
-	targetStack [][]*ast.Ident // stack of unresolved labels
+	inRhs bool // if set, the parser is parsing a rhs expression
 }
 
 func (p *parser) init(fset *token.FileSet, filename string, src []byte, mode Mode) {
@@ -188,16 +183,6 @@ func (p *parser) advance(to map[token.Token]bool) {
 	}
 }
 
-func (p *parser) eqAny(tok ...token.Token) (eq bool, which token.Token) {
-	for _, t := range tok {
-		if p.tok == t {
-			eq, which = true, t
-			break
-		}
-	}
-	return
-}
-
 var stmtStart = map[token.Token]bool{
 	token.WHILE:  true,
 	token.DO:     true,
@@ -233,6 +218,16 @@ func (p *parser) safePos(pos token.Pos) (res token.Pos) {
 	}()
 	_ = p.file.Offset(pos) // trigger a panic if position is out-of-range
 	return pos
+}
+
+func isAny(tok token.Token, toks ...token.Token) (is bool) {
+	for _, t := range toks {
+		if tok == t {
+			is = true
+			break
+		}
+	}
+	return
 }
 
 // ----------------------------------------------------------------------------
@@ -284,14 +279,14 @@ func (p *parser) parseExprList() (list []ast.Expr) {
 // ----------------------------------------------------------------------------
 // Statement list
 
-func (p *parser) parseStmtList(end ...token.Token) (list []ast.Stmt, use token.Token) {
+func (p *parser) parseStmtList(end ...token.Token) (list []ast.Stmt) {
 	if p.trace {
 		defer un(trace(p, "StatementList"))
 	}
 
-	eq, use := p.eqAny(end...)
+	is := isAny(p.tok, end...)
 
-	for !eq && p.tok != token.EOF {
+	for !is && p.tok != token.EOF {
 		list = append(list, p.parseStmt())
 	}
 
@@ -301,9 +296,35 @@ func (p *parser) parseStmtList(end ...token.Token) (list []ast.Stmt, use token.T
 // ----------------------------------------------------------------------------
 // Expressions
 
-func (p *parser) isType() (is bool) {
-	is, _ = p.eqAny(token.IDENT, token.INTEGER, token.CHAR, token.ARRAY)
-	return
+func isType(tok token.Token) (is bool) {
+	return isAny(tok, token.IDENT, token.INTEGER, token.CHAR, token.ARRAY)
+}
+
+// If x is of the form (T), unparen returns unparen(T), otherwise it returns x.
+func unparen(x ast.Expr) ast.Expr {
+	if p, isParen := x.(*ast.ParenExpr); isParen {
+		x = unparen(p.X)
+	}
+	return x
+}
+
+// checkExpr checks that x is an expression (and not a type).
+func (p *parser) checkExpr(x ast.Expr) ast.Expr {
+	switch unparen(x).(type) {
+	case *ast.BadExpr:
+	case *ast.Ident:
+	case *ast.BasicLit:
+	case *ast.ParenExpr:
+		panic("unreachable")
+	case *ast.IndexExpr:
+	case *ast.CallExpr:
+	case *ast.BinaryExpr:
+	default:
+		// all other nodes are not proper expressions
+		p.errorExpected(x.Pos(), "expression")
+		x = &ast.BadExpr{From: x.Pos(), To: p.safePos(x.End())}
+	}
+	return x
 }
 
 func (p *parser) parseType() ast.Expr {
@@ -328,24 +349,39 @@ func (p *parser) parseType() ast.Expr {
 	}
 }
 
-func (p *parser) parseBasicLit() *ast.BasicLit {
-	if p.trace {
-		defer un(trace(p, "BasicLit"))
-	}
-
-	return &ast.BasicLit{ValuePos: p.pos, Kind: p.tok, Value: p.lit}
+func (p *parser) parseRhs() ast.Expr {
+	old := p.inRhs
+	p.inRhs = true
+	x := p.checkExpr(p.parseExpr())
+	p.inRhs = old
+	return x
 }
 
-func (p *parser) parseParenExpr() *ast.ParenExpr {
+func (p *parser) parseOperand() ast.Expr {
 	if p.trace {
-		defer un(trace(p, "ParenExpr"))
+		defer un(trace(p, "Operand"))
 	}
 
-	lparen := p.expect(token.LPAREN)
-	x := p.parseExpr()
-	rparen := p.expect(token.RPAREN)
+	switch p.tok {
+	case token.IDENT:
+		x := p.parseIdent()
+		return x
 
-	return &ast.ParenExpr{Lparen: lparen, X: x, Rparen: rparen}
+	case token.INTC, token.CHARC:
+		x := &ast.BasicLit{ValuePos: p.pos, Kind: p.tok, Value: p.lit}
+		p.next()
+		return x
+
+	case token.LPAREN:
+		lparen := p.pos
+		p.next()
+		x := p.parseRhs()
+		rparen := p.expect(token.RPAREN)
+		return &ast.ParenExpr{Lparen: lparen, X: x, Rparen: rparen}
+
+	default:
+		return p.parseType()
+	}
 }
 
 func (p *parser) parseArrayExpr() *ast.ArrayExpr {
@@ -391,49 +427,102 @@ func (p *parser) parseCallExpr(proc *ast.Ident) *ast.CallExpr {
 	return &ast.CallExpr{Proc: proc, Lparen: lparen, Args: args, Rparen: rparen}
 }
 
-// If x is of the form (T), unparen returns unparen(T), otherwise it returns x.
-func unparen(x ast.Expr) ast.Expr {
-	if p, isParen := x.(*ast.ParenExpr); isParen {
-		x = unparen(p.X)
+func (p *parser) parsePrimaryExpr() ast.Expr {
+	if p.trace {
+		defer un(trace(p, "PrimaryExpr"))
 	}
+
+	x := p.parseOperand()
+L:
+	for {
+		switch p.tok {
+		case token.LBRACK:
+			x = p.parseIndexExpr(p.checkExpr(x))
+		case token.LPAREN:
+			x = p.parseCallExpr(x.(*ast.Ident))
+		default:
+			break L
+		}
+	}
+
 	return x
 }
 
-func (p *parser) parseBinaryExpr() ast.Expr {
+// If lhs is set and the result is an identifier, it is not resolved.
+func (p *parser) parseUnaryExpr() ast.Expr {
+	if p.trace {
+		defer un(trace(p, "UnaryExpr"))
+	}
+
+	switch p.tok {
+	case token.ADD, token.SUB, token.MUL:
+		pos, op := p.pos, p.tok
+		p.next()
+		x := p.parseUnaryExpr()
+		return &ast.UnaryExpr{OpPos: pos, Op: op, X: p.checkExpr(x)}
+	}
+
+	return p.parsePrimaryExpr()
+}
+
+func (p *parser) tokPrec() (token.Token, int) {
+	tok := p.tok
+	if p.inRhs && tok == token.ASSIGN {
+		tok = token.EQL
+	}
+	return tok, tok.Precedence()
+}
+
+func (p *parser) parseBinaryExpr(prec1 int) ast.Expr {
 	if p.trace {
 		defer un(trace(p, "BinaryExpr"))
 	}
 
-	x := p.parseExpr()
-	var (
-		op    token.Token
-		opPos token.Pos
-	)
-	switch p.tok {
-	case token.ADD, token.SUB, token.MUL, token.QUO, token.EQL, token.GTR, token.LSS:
-		op = p.tok
-		opPos = p.pos
-	default:
-		pos := p.pos
-		p.errorExpected(p.pos, "binary operator")
-		p.advance(exprEnd)
-		return &ast.BadExpr{From: pos, To: p.pos}
-	}
-	y := p.parseExpr()
+	x := p.parseUnaryExpr()
+	for {
+		op, prec := p.tokPrec()
+		if prec < prec1 {
+			return x
+		}
+		pos := p.expect(op)
 
-	return &ast.BinaryExpr{X: x, Op: op, OpPos: opPos, Y: y}
+		y := p.parseBinaryExpr(prec + 1)
+		x = &ast.BinaryExpr{X: p.checkExpr(x), OpPos: pos, Op: op, Y: p.checkExpr(y)}
+	}
 }
 
+//func (p *parser) parseBinaryExpr() ast.Expr {
+//	if p.trace {
+//		defer un(trace(p, "BinaryExpr"))
+//	}
+//
+//	x := p.parseExpr()
+//	var (
+//		op    token.Token
+//		opPos token.Pos
+//	)
+//	switch p.tok {
+//	case token.ADD, token.SUB, token.MUL, token.QUO, token.EQL, token.GTR, token.LSS:
+//		op = p.tok
+//		opPos = p.pos
+//	default:
+//		pos := p.pos
+//		p.errorExpected(p.pos, "binary operator")
+//		p.advance(exprEnd)
+//		return &ast.BadExpr{From: pos, To: p.pos}
+//	}
+//	y := p.parseExpr()
+//
+//	return &ast.BinaryExpr{X: x, Op: op, OpPos: opPos, Y: y}
+//}
+
 // If lhs is set and the result is an identifier, it is not resolved.
-// The result may be a type or even a raw type ([...]int). Callers must
-// check the result (using checkExpr or checkExprOrType), depending on
-// context.
 func (p *parser) parseExpr() ast.Expr {
 	if p.trace {
 		defer un(trace(p, "Expression"))
 	}
 
-	return p.parseBinaryExpr() //TODO
+	return p.parseBinaryExpr(token.LowestPrec + 1) //TODO
 }
 
 // ----------------------------------------------------------------------------
@@ -471,11 +560,11 @@ func (p *parser) parseIfStmt() *ast.IfStmt {
 	pos := p.expect(token.IF)
 	cond := p.parseExpr()
 	p.expect(token.THEN)
-	then, use := p.parseStmtList(token.ELSE, token.FI)
+	then := p.parseStmtList(token.ELSE, token.FI)
 	var els []ast.Stmt = nil
-	if use == token.ELSE {
+	if p.tok == token.ELSE {
 		p.expect(token.ELSE)
-		els, _ = p.parseStmtList(token.FI)
+		els = p.parseStmtList(token.FI)
 	}
 	fi := p.expect(token.FI)
 
@@ -490,7 +579,7 @@ func (p *parser) parseWhileStmt() ast.Stmt {
 	pos := p.expect(token.WHILE)
 	cond := p.parseExpr()
 	p.expect(token.DO)
-	body, _ := p.parseStmtList(token.ENDWH)
+	body := p.parseStmtList(token.ENDWH)
 	endwh := p.expect(token.ENDWH)
 
 	return &ast.WhileStmt{While: pos, Cond: cond, Body: body, Endwh: endwh}
@@ -543,9 +632,8 @@ func (p *parser) parseStmt() (s ast.Stmt) {
 // ----------------------------------------------------------------------------
 // Declarations
 
-func (p *parser) isDecl() (is bool) {
-	is, _ = p.eqAny(token.TYPE, token.VAR, token.PROCEDURE)
-	return
+func isDecl(tok token.Token) (is bool) {
+	return isAny(tok, token.TYPE, token.VAR, token.PROCEDURE)
 }
 
 func (p *parser) parseVarList() *ast.FieldList {
@@ -555,7 +643,7 @@ func (p *parser) parseVarList() *ast.FieldList {
 
 	var list []*ast.Field
 
-	for p.isType() {
+	for isType(p.tok) {
 		typ := p.parseType()
 		ids := p.parseIdentList()
 		list = append(list, &ast.Field{Names: ids, Type: typ})
@@ -637,7 +725,7 @@ func (p *parser) parseProcDecl() *ast.ProcDecl {
 	p.expectSemi()
 	vars := p.parseVarDecl()
 	p.expect(token.BEGIN)
-	body, _ := p.parseStmtList(token.END)
+	body := p.parseStmtList(token.END)
 	end := p.expect(token.END)
 
 	return &ast.ProcDecl{
@@ -699,12 +787,12 @@ func (p *parser) parseFile() *ast.File {
 
 	var decls []ast.Decl
 
-	for p.isDecl() {
+	for isDecl(p.tok) {
 		decls = append(decls, p.parseDecl())
 	}
 
 	p.expect(token.BEGIN)
-	body, _ := p.parseStmtList(token.END)
+	body := p.parseStmtList(token.END)
 	p.expect(token.END)
 	dot := p.expect(token.DOT)
 

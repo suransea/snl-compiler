@@ -89,6 +89,13 @@ type (
 		Rparen token.Pos // position of ")"
 	}
 
+	// A UnaryExpr node represents a unary expression.
+	UnaryExpr struct {
+		OpPos token.Pos   // position of Op
+		Op    token.Token // operator
+		X     Expr        // operand
+	}
+
 	// A BinaryExpr node represents a binary expression.
 	BinaryExpr struct {
 		X     Expr        // left operand
@@ -106,6 +113,7 @@ func (x *ParenExpr) Pos() token.Pos  { return x.Lparen }
 func (x *ArrayExpr) Pos() token.Pos  { return x.Array }
 func (x *IndexExpr) Pos() token.Pos  { return x.X.Pos() }
 func (x *CallExpr) Pos() token.Pos   { return x.Proc.Pos() }
+func (x *UnaryExpr) Pos() token.Pos  { return x.OpPos }
 func (x *BinaryExpr) Pos() token.Pos { return x.X.Pos() }
 
 func (x *BadExpr) End() token.Pos    { return x.To }
@@ -115,6 +123,7 @@ func (x *ParenExpr) End() token.Pos  { return x.Rparen + 1 }
 func (x *ArrayExpr) End() token.Pos  { return x.Type.End() }
 func (x *IndexExpr) End() token.Pos  { return x.Rbrack + 1 }
 func (x *CallExpr) End() token.Pos   { return x.Rparen + 1 }
+func (x *UnaryExpr) End() token.Pos  { return x.X.End() }
 func (x *BinaryExpr) End() token.Pos { return x.Y.End() }
 
 // exprNode() ensures that only expression/type nodes can be
@@ -127,6 +136,7 @@ func (*ParenExpr) exprNode()  {}
 func (*ArrayExpr) exprNode()  {}
 func (*IndexExpr) exprNode()  {}
 func (*CallExpr) exprNode()   {}
+func (*UnaryExpr) exprNode()  {}
 func (*BinaryExpr) exprNode() {}
 
 // A Field represents a Field declaration list in a procedure or var,
